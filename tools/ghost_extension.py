@@ -6,11 +6,12 @@ import hashlib
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 TOOL = "GHOST-ArtifactSanitizer"
-VERSION = "1.0.0"
-PROFILE = "Evidence sanitization and redaction"
+VERSION = "3.0-PRO"
+PROFILE = "Evidence sanitization and PII redaction engine"
 RULES = [('SANIT-IP', '\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b'), ('SANIT-EMAIL', '[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+'), ('SANIT-KEY', 'BEGIN\\s+[A-Z\\s]+PRIVATE KEY')]
 
 
@@ -27,9 +28,13 @@ def render_banner() -> None:
  | | |_ |  _  | |  | | |  | || |
  | |__| | | | | |__| | |__| || |_
   \\_____|_| |_|\\____/ \\____/_____|
-      GHOST-ArtifactSanitizer v1.0-PRO (Zero-Guessing Engine)
+      GHOST-ArtifactSanitizer v3.0-PRO (Zero-Guessing Engine)
 \"\"\"
     print(banner)
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def digest(path: Path) -> str:
@@ -41,7 +46,7 @@ def digest(path: Path) -> str:
 
 
 def evidence(value: str) -> str:
-    return value.strip().replace("\\x00", "")[:260]
+    return value.strip().replace("\\x00", "")[:280]
 
 
 def scan_file(path: Path) -> list[dict]:
@@ -56,14 +61,14 @@ def scan_file(path: Path) -> list[dict]:
             if re.search(pattern, line, re.I):
                 findings.append({
                     "rule_id": rule_id,
-                    "severity": "high" if "WEAK" in rule_id or "SUID" in rule_id or "KEY" in rule_id else "medium",
+                    "severity": "high" if any(k in rule_id for k in ["PUBLIC", "WEAK", "KEY", "PRIV", "ROOT", "SUID", "OPEN", "IMPLICIT", "FAIL"]) else "medium",
                     "confidence": "high",
-                    "title": f"Observable indicator: {{rule_id}}",
-                    "description": f"Matched pattern {{rule_id}} in target file.",
+                    "title": f"Observable risk indicator: {{rule_id}}",
+                    "description": f"Matched rule {{rule_id}} in inspected artifact.",
                     "evidence": evidence(line),
                     "source": "operator-input",
                     "location": f"{{path}}:{{line_no}}",
-                    "remediation": "Review the configuration or evidence against authorized hardening benchmarks."
+                    "remediation": "Validate configuration, harden target posture, or remediate finding in source."
                 })
     return findings
 
@@ -81,11 +86,12 @@ def analyze(target: Path) -> dict:
         artifacts.append({"path": str(path.resolve()), "size_bytes": size, "sha256": h})
         findings.extend(scan_file(path))
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "3.0.0",
         "tool": TOOL,
         "version": VERSION,
         "profile": PROFILE,
         "target": str(target.resolve()),
+        "analyzed_at": now_utc(),
         "artifact_count": len(artifacts),
         "finding_count": len(findings),
         "artifacts": artifacts,
